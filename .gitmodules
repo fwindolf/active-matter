@@ -1,0 +1,6 @@
+[submodule "universal_datagen"]
+	path = universal_datagen
+	url = ../universal_datagen/
+[submodule "universal_models"]
+	path = universal_models
+	url = ../universal_models/
