@@ -77,7 +77,9 @@ else:
     raise AttributeError("Invalid optimizer")
 
 model.compile(optimizer=optimizer, loss=loss, metrics=args.train_metrics)
-model_output_dir = 'output/%s_ep%02d_nc%02d_st_%s_%s' % (args.model, args.train_epochs, n_classes, args.structure, "l" if args.labeled else "ul")
+model_output_dir = 'output/%s/%s/%s/%d' % (args.model, args.structure, "labeled" if args.labeled else "unlabeled", time.time())
+if not os.path.exists(model_output_dir):
+    os.mkdirs(model_output_dir)
 filepath = model_output_dir + '/weights_{epoch:03d}.hdf5'
 
 print("Model output:", model_output_dir)
@@ -124,6 +126,7 @@ model.fit_generator(tgen,
 
 print("Finish Training")
 
+model.save_weights(model_output_dir + '/last_weights.hd5f')
 best_weights = glob.glob(model_output_dir + '/weights*')[-1]
 model.load_weights(best_weights)
 
