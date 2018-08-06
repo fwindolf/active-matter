@@ -7,7 +7,10 @@ import keras
 from keras.callbacks import *
 
 from utils import *
+import os
+import json
 import glob
+import time
 
 parser = argparse.ArgumentParser()
 
@@ -80,6 +83,18 @@ model.compile(optimizer=optimizer, loss=loss, metrics=args.train_metrics)
 model_output_dir = 'output/%s/%s/%s/%d' % (args.model, args.structure, "labeled" if args.labeled else "unlabeled", time.time())
 if not os.path.exists(model_output_dir):
     os.mkdirs(model_output_dir)
+
+# save model as json
+with open(model_output_dir + '/model.json', 'w') as f:
+    f.write(model.to_json())
+
+# save parameters
+with open(model_output_dir + '/param.json', 'w') as f:
+    d = dict()
+    for key in vars(args):
+        d[key] = getattr(args, key)
+    f.write(json.dumps(d))
+
 filepath = model_output_dir + '/weights_{epoch:03d}.hdf5'
 
 print("Model output:", model_output_dir)
