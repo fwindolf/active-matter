@@ -101,7 +101,7 @@ training_data = AM2018TxtGenerator(args.dataset_paths, (input_height, input_widt
                                       num_data=args.dataset_max_num)
 
 tgen, vgen = training_data.generator(structure=args.structure, labeled=args.labeled, batch_size=args.train_batchsize, 
-                                     num_crops=args.train_crops, split=args.train_split, flatten_label=True)
+                                     num_crops=args.train_crops, split=args.train_split)
 
 # Train model
 print("Start Training on", len(training_data), "datapoints")
