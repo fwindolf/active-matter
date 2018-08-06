@@ -76,13 +76,15 @@ if args.train_optimizer == 'adam':
     optimizer = keras.optimizers.Adam(lr=args.train_learning_rate)
 elif args.train_optimizer == 'adadelta':
     optimizer = keras.optimizers.Adadelta(lr=args.train_learning_rate)
+elif args.train_optimizer == 'sgd':
+    optimizer = keras.optimizers.SGD(lr=args.train_learning_rate)
 else:
     raise AttributeError("Invalid optimizer")
 
 model.compile(optimizer=optimizer, loss=loss, metrics=args.train_metrics)
-model_output_dir = 'output/%s/%s/%s/%d' % (args.model, args.structure, "labeled" if args.labeled else "unlabeled", time.time())
+model_output_dir = 'output/%s_%s_%s_%d' % (args.model, args.structure, "l" if args.labeled else "ul", time.time())
 if not os.path.exists(model_output_dir):
-    os.mkdirs(model_output_dir)
+    os.mkdir(model_output_dir)
 
 # save model as json
 with open(model_output_dir + '/model.json', 'w') as f:
@@ -101,8 +103,8 @@ print("Model output:", model_output_dir)
 
 callbacks = []
 callbacks.append(ModelCheckpoint(filepath, monitor='val_loss', save_best_only=True))
-callbacks.append(ReduceLROnPlateau(monitor='val_loss', patience=10, min_lr=1e-5, factor=0.1))
-callbacks.append(EarlyStopping(monitor='val_loss', patience=50))
+callbacks.append(ReduceLROnPlateau(monitor='val_loss', patience=20, min_lr=1e-4, factor=0.1, verbose=1))
+callbacks.append(EarlyStopping(monitor='val_loss', patience=100, verbose=1))
 callbacks.append(TensorBoard(log_dir = model_output_dir, histogram_freq=0))
 
 # Configure Keras
