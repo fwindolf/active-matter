@@ -70,7 +70,7 @@ h, w, _ = im.shape
 
 print("Creating video writer")
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
-out = cv2.VideoWriter(args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
+out = cv2.VideoWriter(args.weights_folder + "/" + args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
 
 # Test video writer
 try:
@@ -79,7 +79,7 @@ except cv2.error as e:
     logging.critical("Tested to write empty frame to video but failed. This might indicate wrong image/video dimensions")
     exit(0)
 
-data_iterator = data.iterator(args.structure, labeled=True, cropped=False, ordering='channel_first')
+data_iterator = data.iterator(args.structure, labeled=True, cropped=False)
 
 fq = queue.Queue(30)
 vq = queue.Queue(30)
@@ -130,9 +130,8 @@ def feed_video():
         
         x, yp = item        
         logging.debug("Received frame with shapes %s and %s" % (x.shape, yp.shape, ))
-        x = np.moveaxis(x, 0, -1) # make channel_last
-        yp = np.reshape(yp[..., 1:], (args.input_height, args.input_width, 3)) # bgr
-        yp = np.stack((yp[..., 2], yp[..., 1], yp[..., 0],), axis=2) # bgr 
+        
+        yp = np.stack((yp[..., 3], yp[..., 2], yp[..., 1],), axis=2) # bgr 
 
         # Input
         im_x.cla()
