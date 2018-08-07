@@ -2,7 +2,7 @@ import keras
 import numpy as np
 import matplotlib.pyplot as plt
 
-def to_classes(prediction, n_classes=4, ordering='channel_first', threshold=0.00):
+def to_classes(prediction, n_classes=4, ordering='channel_last', threshold=0.00):
     output = prediction
     output[output <= threshold] = 0
     if ordering is 'channel_first':
@@ -14,7 +14,7 @@ def to_classes(prediction, n_classes=4, ordering='channel_first', threshold=0.00
         output = keras.utils.to_categorical(output, num_classes=n_classes)
     return output
 
-def show_image(img, greyscale=False, ordering='channel_first'):
+def show_image(img, greyscale=False, ordering='channel_last'):
     """
     Show/Plot an image from various formats
     """
@@ -32,7 +32,7 @@ def show_image(img, greyscale=False, ordering='channel_first'):
     
     plt.imshow(img)
 
-def show_label(lbl, ignore_background=True, ordering='channel_first'):
+def show_label(lbl, ignore_background=True, ordering='channel_last'):
     """
     Show/Plot a label from various formats with various numbers of channels
     """
@@ -71,7 +71,7 @@ def show_label(lbl, ignore_background=True, ordering='channel_first'):
     raise NotImplementedError("No extra colors available")
 
 
-def show_sequence(data, stacked_size=3, ordering='channel_first'):
+def show_sequence(data, stacked_size=3, ordering='channel_last'):
     """
     Visualizes one batch of sequence data.
     Args:
@@ -104,7 +104,7 @@ def show_sequence(data, stacked_size=3, ordering='channel_first'):
             show_label(y[j])
     return fig
     
-def show_stacked(data, stacked_size=3, ordering='channel_first'):
+def show_stacked(data, stacked_size=3, ordering='channel_last'):
     """
     Visualizes one batch of stacked data.
     Args:
@@ -138,7 +138,7 @@ def show_stacked(data, stacked_size=3, ordering='channel_first'):
     
     return fig
 
-def show_pair(data, labeled=True, ordering='channel_first'):
+def show_pair(data, labeled=True, ordering='channel_last'):
     """
     Visualizes one batch of paired data.
     Args:
@@ -169,7 +169,7 @@ def show_pair(data, labeled=True, ordering='channel_first'):
     
     return fig
 
-def compare_pair(data, labeled=True, ordering='channel_first'):
+def compare_pair(data, labeled=True, ordering='channel_last'):
     """
     Visualizes one batch of paired data.
     Args:
