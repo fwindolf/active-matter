@@ -1,6 +1,8 @@
 import argparse
 from universal_datagen.generator.generator_text import AM2018TxtGenerator
 from universal_models.models.models import get_model
+from universal_models.losses.losses import ce_dice_loss, bce_dice_loss, dice_coeff, gen_dice_coeff
+from keras.losses import binary_crossentropy, categorical_crossentropy
 
 import tensorflow as tf
 import keras
@@ -46,8 +48,9 @@ parser.add_argument('-to', '--train_optimizer', help='Optimizer used for trainin
                     default='adam')
 parser.add_argument('-tr', '--train_learning_rate', help='Learning rate for optimizer',
                     type=float, default=0.001)                    
-parser.add_argument('-tm', '--train_metrics', help='Metrics to evaluate training progress',
-                    type=list, default=['accuracy', ])
+parser.add_argument('-tl', '--train_loss', help='Loss to train on',
+                    default='crossentropy',
+                    choices=['crossentropy', 'dice'])
 parser.add_argument('-tc', '--train_crops', help='Use crops of the original data',
                     type=int, default=None)
 parser.add_argument('-te', '--train_epochs', help='Number of epochs the model is trained for',
@@ -67,10 +70,24 @@ n_classes = args.dataset_num_classes
 # Create and Configure model
 if args.labeled:
     model, output_height, output_width = get_model(args.model, input_height, input_width, input_channels * args.dataset_stack_size, n_classes)
-    loss = 'categorical_crossentropy'
+    if args.train_loss == 'crossentropy':
+        loss = categorical_crossentropy
+        metrics = ['accuracy']
+    elif args.train_loss == 'dice':
+        loss = ce_dice_loss
+        metrics = [gen_dice_coeff, ]
+    else:
+        raise AttributeError("Unknown Loss")
 else:
     model, output_height, output_width = get_model(args.model, input_height, input_width, input_channels * args.dataset_stack_size, input_channels)
-    loss = 'bce_dice_loss' # only works for 1D output
+    if args.train_loss == 'crossentropy':
+        loss = binary_crossentropy
+        metrics = ['accuracy']
+    elif args.train_loss == 'dice':
+        loss = bce_dice_loss
+        metrics = [dice_coeff, ]
+    else:
+        raise AttributeError("Invalid loss")
 
 if args.train_optimizer == 'adam':
     optimizer = keras.optimizers.Adam(lr=args.train_learning_rate)
@@ -81,10 +98,10 @@ elif args.train_optimizer == 'sgd':
 else:
     raise AttributeError("Invalid optimizer")
 
-model.compile(optimizer=optimizer, loss=loss, metrics=args.train_metrics)
-model_output_dir = 'output/%s_%s_%s_%d' % (args.model, args.structure, "l" if args.labeled else "ul", time.time())
+model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+model_output_dir = 'output/%s/%s/%s/%d' % (args.model, args.structure, "labeled" if args.labeled else "unlabeled", time.time())
 if not os.path.exists(model_output_dir):
-    os.mkdir(model_output_dir)
+    os.makedirs(model_output_dir, exist_ok=True)
 
 # save model as json
 with open(model_output_dir + '/model.json', 'w') as f:
@@ -103,7 +120,8 @@ print("Model output:", model_output_dir)
 
 callbacks = []
 callbacks.append(ModelCheckpoint(filepath, monitor='val_loss', save_best_only=True))
-callbacks.append(ReduceLROnPlateau(monitor='val_loss', patience=20, min_lr=1e-4, factor=0.1, verbose=1))
+callbacks.append(ReduceLROnPlateau(monitor='val_loss', patience=20, min_lr=0.001*args.train_learning_rate, 
+                                   factor=0.1, verbose=1))
 callbacks.append(EarlyStopping(monitor='val_loss', patience=100, verbose=1))
 callbacks.append(TensorBoard(log_dir = model_output_dir, histogram_freq=0))
 
@@ -145,47 +163,9 @@ print("Finish Training")
 
 model.save_weights(model_output_dir + '/last_weights.hd5f')
 best_weights = glob.glob(model_output_dir + '/weights*')[-1]
+
 model.load_weights(best_weights)
 
 print("Evaluate on Validation data")
 score = model.evaluate_generator(vgen, steps=1, verbose=1)
-
 print("Evaluation: Accuracy %.2f%%" % (score[1] * 100))
-
-# Visual eval on training data
-x_train, y_train = next(tgen)
-yp_train = model.predict(x_train)
-
-# unflatten
-yp_train = np.reshape(np.moveaxis(yp_train, -1, 1), (x_train.shape[0], 4, output_height, output_width))
-y_train = np.reshape(np.moveaxis(y_train, -1, 1), (x_train.shape[0], 4, output_height, output_width))
-
-n_c = n_classes if args.labeled else input_channels
-
-data = (x_train, to_classes(yp_train, n_classes=n_c), y_train)
-if args.structure == 'pair':
-    fig = compare_pair(data, labeled=args.labeled)
-elif args.structure == 'sequence':
-    pass
-    # fig = show_sequence(data)
-elif args.structure == 'stacked':
-    fig = compare_pair(data) # works by showing x as stacked
-
-plt.savefig(model_output_dir + '/training.png')
-
-# Visual eval on training data
-x_val, y_val = next(vgen)
-yp_val = model.predict(x_val)
-yp_val = np.reshape(np.moveaxis(yp_val, -1, 1), (x_val.shape[0], 4, output_height, output_width))
-y_val = np.reshape(np.moveaxis(y_val, -1, 1), (x_val.shape[0], 4, output_height, output_width))
-
-data = (x_val, to_classes(yp_val, n_classes=n_c), y_val)
-if args.structure == 'pair':
-    fig = compare_pair(data, labeled=args.labeled)
-elif args.structure == 'sequence':
-    pass
-    # fig = show_sequence(data)
-elif args.structure == 'stacked':
-    fig = compare_pair(data) # works by showing x as stacked
-
-plt.savefig(model_output_dir + '/validation.png')

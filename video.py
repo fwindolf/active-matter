@@ -9,8 +9,10 @@ import cv2
 import tensorflow as tf
 tf.logging.set_verbosity(tf.logging.FATAL)
 import keras
+from keras.models import model_from_json
 
 import glob
+import json
 import time
 import queue
 import threading
@@ -21,25 +23,24 @@ logging.basicConfig(format='%(asctime)s: %(message)s', datefmt='%Y-%m-%d %I:%M:%
 parser = argparse.ArgumentParser()
 
 # model arguments
-parser.add_argument('-m', '--model', help='Name of the model to train', required=True)
-
+parser.add_argument('-m', '--model_dir', help='Path to the model dir (includes model.json, param.json, weights file)', required=True)
 parser.add_argument('-d', '--data', help='Path to the data sequence', required=True)
-parser.add_argument('-s', '--structure', help='Structure of the data', required=True, choices=['pair', 'stacked', 'sequence'])       
-parser.add_argument('-w', '--weights_folder', help='Path to the stored weights of the model', required=True)
+
 parser.add_argument('-f', '--fps', type=float, default=20.0, help='FPS for the video')
 parser.add_argument('-o', '--output_name', default='output', help='Name of the video')
-parser.add_argument('-c', '--classes', help='Number of classes in output data', type=int, default=4)
 parser.add_argument('-b', '--batch_size', help='Speed up by increasing the number of frames fed to the model', type=int, default=1)
 parser.add_argument('-max', '--max_frames', help='Maximum number of frames to process', type=int, default=100000)
 
-parser.add_argument('-ih', '--input_height', help='Height dimension of input data to model', type=int, default=256)
-parser.add_argument('-iw', '--input_width', help='Width dimension of input data to model', type=int, default=256)
-parser.add_argument('-in', '--input_channels', help='Channels dimension of input data to model', type=int, default=1)
-
 args = parser.parse_args()
 
-data = AM2018TxtGenerator([args.data,], (args.input_height, args.input_width, args.input_channels), 
-                                      (args.input_height, args.input_width, args.classes))
+# parse extra args
+with open(args.model_dir + '/param.json', 'r') as f:
+    extra = json.load(f)
+    for k in extra:
+        setattr(args, k, extra[k])
+
+data = AM2018TxtGenerator([args.data,], (args.dataset_input_height, args.dataset_input_width, args.dataset_stack_size), 
+                                      (args.dataset_input_height, args.dataset_input_width, args.dataset_num_classes))
 
 def fig_to_np(fig):
     # Render into numpy array
@@ -55,8 +56,8 @@ def fig_to_np(fig):
 fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 im_x, im_y = axes.ravel()
 
-x = np.zeros((args.input_height, args.input_width))
-y = np.zeros((args.input_height, args.input_width))
+x = np.zeros((args.dataset_input_height, args.dataset_input_width))
+y = np.zeros((args.dataset_input_height, args.dataset_input_width))
 im_x.set_axis_off()
 im_x.imshow(x, cmap='hot')
 im_x.set_title("Input")
@@ -70,7 +71,7 @@ h, w, _ = im.shape
 
 print("Creating video writer")
 fourcc = cv2.VideoWriter_fourcc(*'XVID')
-out = cv2.VideoWriter(args.weights_folder + "/" + args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
+out = cv2.VideoWriter(args.model_dir + "/" + args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
 
 # Test video writer
 try:
@@ -86,12 +87,18 @@ vq = queue.Queue(30)
 
 def feed_model():
     # create model in this thread
-    model, _, _ = get_model(args.model, args.input_height, args.input_width, args.input_channels, args.classes)
-    weights = glob.glob(args.weights_folder + "/*.hdf5")
+    logging.debug("Loading model file %s" % (args.model_dir + '/model.json'))
+    with open(args.model_dir + '/model.json', 'r') as f:
+        model = model_from_json(f.read())
+
+    weights = glob.glob(args.model_dir + "/weights*.hdf5")
+    logging.debug("Loading weights file %s" % (sorted(weights)[-1]))
     model.load_weights(sorted(weights)[-1])
 
     logging.debug("Model created")
     stop = False    
+
+    logging.debug("Using batch size of %d" % args.batch_size)
     while not stop:
         xb = []
         while(len(xb) < args.batch_size):
