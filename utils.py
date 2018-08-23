@@ -124,7 +124,7 @@ def show_label(lbl, ignore_background=True, ordering='channel_last'):
     raise NotImplementedError("No extra colors available")
 
 
-def show_sequence(data, stacked_size=3, ordering='channel_last'):
+def show_sequence(data, ordering='channel_last'):
     """
     Visualizes one batch of sequence data.
     Args:
@@ -135,17 +135,15 @@ def show_sequence(data, stacked_size=3, ordering='channel_last'):
         A figure containing the plots with horizontally stacked images.
     """
     xb, yb = data
-    batch_size = len(xb)
+    batch_size = xb.shape[0]
+    stacked_size = xb.shape[1]
     
     fig = plt.figure(figsize=(5 * stacked_size, 5 * 2 * batch_size))
     for i in range(batch_size):
         x = xb[i]
         for j in range(stacked_size):
             fig.add_subplot(2 * batch_size, stacked_size, stacked_size * (2 * i) + j + 1) 
-            if ordering == 'channel_first':
                 show_image(x[j])
-            else:
-                show_image(x[..., j])
         
         if yb[i] is not None:
             y = yb[i]
@@ -154,7 +152,14 @@ def show_sequence(data, stacked_size=3, ordering='channel_last'):
             
         for j in range(stacked_size):
             fig.add_subplot(2 * batch_size, stacked_size, stacked_size * (2 * i + 1) + j + 1)
+            if ordering == 'channel_first':
+                y[j] = np.moveaxis(y[j], 0, -1)
+            
+            if y.shape[-1] == 1:
+                show_image(y[j])
+            else:
             show_label(y[j])
+
     return fig
     
 def show_stacked(data, stacked_size=3, ordering='channel_last'):
