@@ -75,7 +75,7 @@ def show_image(img, greyscale=False, ordering='channel_last'):
     if len(img.shape) > 2 and ordering == 'channel_first':
         img = np.moveaxis(img, 0, -1)
 
-    if img.dtype == np.uint8:
+    if img.dtype == np.uint8 and np.max(img) <= 1:
         img = img * 255
 
     img = np.squeeze(img)
