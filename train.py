@@ -132,10 +132,27 @@ config.allow_soft_placement=True
 sess = tf.Session(config=config)
 sess.run(tf.global_variables_initializer())
 
+# calculate the crop scale 
+orig_width = 1600
+crop_scale = np.round((input_width/orig_width)/args.dataset_crop_area, 2)
+
 # Create data generators
-training_data = AM2018TxtGenerator(args.dataset_paths, (input_height, input_width, input_channels * args.dataset_stack_size), 
-                                      (output_height, output_width, n_classes), crop_scale=args.dataset_crop_scale, 
+if args.dataset_type == 'text':
+    gen_class = AM2018TxtGenerator
+elif args.dataset_type == 'image':
+    gen_class = AM2018ImageGenerator
+elif args.dataset_type == 'mixed':
+    gen_class = AM2018MixedGenerator
+else:
+    raise AttributeError("Generator type %s not supported" % args.dataset_type)
+
+training_data = gen_class(args.dataset_paths, (input_height, input_width, input_channels * stacksize), 
+                         (output_height, output_width, n_classes), crop_scale=crop_scale, 
                                       num_data=args.dataset_max_num)
+
+# Convert 0 crops to None
+if args.train_crops == 0:
+    args.train_crops = None
 
 tgen, vgen = training_data.generator(structure=args.structure, labeled=args.labeled, batch_size=args.train_batchsize, 
                                      num_crops=args.train_crops, split=args.train_split)
