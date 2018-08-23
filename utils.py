@@ -1,4 +1,5 @@
 import keras
+import keras.backend as K
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -137,19 +138,19 @@ def show_sequence(data, ordering='channel_last'):
     xb, yb = data
     batch_size = xb.shape[0]
     stacked_size = xb.shape[1]
-    
+        
     fig = plt.figure(figsize=(5 * stacked_size, 5 * 2 * batch_size))
     for i in range(batch_size):
         x = xb[i]
         for j in range(stacked_size):
             fig.add_subplot(2 * batch_size, stacked_size, stacked_size * (2 * i) + j + 1) 
-                show_image(x[j])
+            show_image(x[j])
         
         if yb[i] is not None:
             y = yb[i]
         else:
             y = np.zeros_like(xb[i])
-            
+        
         for j in range(stacked_size):
             fig.add_subplot(2 * batch_size, stacked_size, stacked_size * (2 * i + 1) + j + 1)
             if ordering == 'channel_first':
@@ -158,7 +159,7 @@ def show_sequence(data, ordering='channel_last'):
             if y.shape[-1] == 1:
                 show_image(y[j])
             else:
-            show_label(y[j])
+                show_label(y[j])
 
     return fig
     
@@ -262,4 +263,57 @@ def compare_pair(data, labeled=True, ordering='channel_last'):
         else:
             show_image(y, ordering=ordering)
         
+    return fig
+
+
+def compare_sequence(data, ordering='channel_last'):
+    """
+    Visualizes one batch of sequence data.
+    Args:
+        data: Data batch containing a tuple of X and Y data with dimensions [b, stacked_size, c, h, w]
+        stacked_size: Number of images stacked ontop of each other to create the data.
+        ordering: Ordering of the data, channel_first means [c, h, w], channel_last means [h, w, c]
+    Return:
+        A figure containing the plots with horizontally stacked images.
+    """
+    xb, ypb, yb = data
+    batch_size = xb.shape[0]
+    stacked_size = xb.shape[1]
+        
+    fig = plt.figure(figsize=(5 * stacked_size, 5 * 3 * batch_size))
+    for i in range(batch_size):
+        # Input
+        x = xb[i]
+        for j in range(stacked_size):
+            fig.add_subplot(3 * batch_size, stacked_size, stacked_size * (3 * i) + j + 1) 
+            show_image(x[j])
+    
+        # Prediction
+        yp = ypb[i]
+        for j in range(stacked_size):
+            fig.add_subplot(3 * batch_size, stacked_size, stacked_size * (3 * i + 1) + j + 1)
+            if ordering == 'channel_first':
+                yp[j] = np.moveaxis(yp[j], 0, -1)
+            
+            if yp.shape[-1] == 1:
+                show_image(yp[j])
+            else:
+                show_label(yp[j])
+
+        # Label
+        if yb[i] is not None:
+            y = yb[i]
+        else:
+            y = np.zeros_like(xb[i])
+
+        for j in range(stacked_size):
+            fig.add_subplot(3 * batch_size, stacked_size, stacked_size * (3 * i + 2) + j + 1)
+            if ordering == 'channel_first':
+                y[j] = np.moveaxis(y[j], 0, -1)
+            
+            if y.shape[-1] == 1:
+                show_image(y[j])
+            else:
+                show_label(y[j])
+
     return fig
