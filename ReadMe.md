@@ -40,30 +40,30 @@ on them). This makes it alot easier to classify the particles into the different
 
 ### Installing on Triton
 
-On trition, setting up the environment will exceed the quota in the home directory. 
-A few hacks later, you will be able to install and use conda packages from your work 
-directory.
+On trition, setting up the environment without care will exceed the quota in the home directory. Thus follow the [tutorial](http://scicomp.aalto.fi/triton/apps/python.html#conda) on howto use anaconda with triton.
 
-First, add the new environment and packages location to the `.condarc` file by executing:
-`mkdir -p <path>/.conda/pkgs <path>/.conda/envs` 
-`conda config --add pkgs_dirs <path>/.conda/pkgs`
-`conda config --add envs_dirs <path>/.conda/envs`
+To be able to use conda, load the suitable `anaconda3/<version>-gpu` module.
+In order to train or evaluate, source the environment and load the modules `CUDA` and `cuDNN` (mind the big D)
 
-Then, make sure the envs/pkgs directory exists in your home folder restrict the permissions
-to those folders.
-`mkdir -p /home/<user>/.conda/pkgs /home/<user>/.conda/envs`
-`touch /home/<user>/.conda/environments.txt`
-`chmod 444 /home/<user>/.conda/pkgs /home/<user>/.conda/envs`
+To install the needed packages, proceed with the local introductions.
 
-Now proceed with the local introductions.
+There is also a script to run training locally `run_local.sh` and on triton `run_train.sh`. 
 
 ### Installing locally
 
-With anaconda3 installed, the environment can be set up by executing:
+With anaconda3 installed (and loaded), the environment can be set up by executing:
 `conda create --name <env-name> --file requirements.txt`
 
-This will create a new conda environment and install all the necessary (and some more ;))
-packages.
+This will create a new conda environment and install all the necessary packages:
+```
+tensorflow-gpu # Tensorflow (DL) library, tested with version 1.6
+keras-gpu      # Abstraction of Tensorflow
+pillow         # Python Image Library, for maniuplating and loading images
+matplotlib     # Plotting library
+jupyter        # Interactive python in the browser
+```
+
+Some packages might not be avaialable in your environment, this was tested on Ubuntu 16.10 and CentOS 7. The `conda-forge` channel might be worth checking out if that is the case.
 
 ## Running 
 
@@ -71,28 +71,30 @@ Find out the usage options by running `train.py -h`. Help strings indicate the u
 of different options.
 
 ```
-usage: train.py [-h] -m MODEL [-s {pair,stacked}] [-l] -dp DATASET_PATHS
-                [DATASET_PATHS ...] [-dh DATASET_INPUT_HEIGHT]
-                [-dw DATASET_INPUT_WIDTH] [-dn DATASET_INPUT_CHANNELS]
-                [-dz DATASET_STACK_SIZE] [-dc DATASET_NUM_CLASSES]
-                [-ds DATASET_CROP_SCALE] [-dm DATASET_MAX_NUM]
-                [-to TRAIN_OPTIMIZER] [-tr TRAIN_LEARNING_RATE]
-                [-tm TRAIN_METRICS] [-tc TRAIN_CROPS] [-te TRAIN_EPOCHS]
-                [-tb TRAIN_BATCHSIZE] [-ts TRAIN_SPLIT]
+usage: train.py [-h] -m MODEL [-s {pair,stacked,sequence}] [-l]
+                [-dt {text,image,mixed}] -dp DATASET_PATHS [DATASET_PATHS ...]
+                [-dh DATASET_INPUT_HEIGHT] [-dw DATASET_INPUT_WIDTH]
+                [-dn DATASET_INPUT_CHANNELS] [-dz DATASET_STACK_SIZE]
+                [-dc DATASET_NUM_CLASSES] [-da DATASET_CROP_AREA]
+                [-dm DATASET_MAX_NUM] [-to TRAIN_OPTIMIZER]
+                [-tr TRAIN_LEARNING_RATE] [-tl {crossentropy,dice}]
+                [-tc TRAIN_CROPS] [-te TRAIN_EPOCHS] [-tb TRAIN_BATCHSIZE]
+                [-ts TRAIN_SPLIT]
 ```
 
 `-m `: Name for the model (as string) you want to train. 
 
-`-s `: Format of the data you want to use for training. `pair` data consists of
-a pair of a consecutive image and label, `stacked` data consists of `-dz` images stacked on
-top of each other and the label.
+`-s `: Format of the data you want to use for training. `pair` data consists of a pair of a consecutive image and label, `stacked` data consists of `-dz` images stacked on top of each other and the label. `sequence` data consists of `-dz` pairs of images and labels.
 
-`-l `: Flag to use labeled data. When not using labeled data, the labels' image is used
-instead.
+`-l `: Flag to use labeled data. For labeled data activate, the data consists of images and labels. If omitted, images with a temporal offset of 1 are used as labels instead.
 
-`-dp`: Provide at least one path to the datasets, where each path should point
-to a location where the data files are located.
+`-dt`: Decides which form of data should be used, creating the respective data generator for the form of data. Make sure the right type is set by checking the ouput during training, where it says how much datapoints the model is trained on.
 
+`-dp`: Provide at least one path to the datasets, where each path should point to a location where the data files are located.
+
+`-da`: The area of the image (ish) that should be used for cropping. For different sizes for image data, this makes sure that the area covered by crops is always the same. Needs `-tc` to be activated in order to have cropping.
+
+`-dm`: The maximum number of data used for training. It will distribute the amount of data taken from different paths evenly. 
 
 ## Creating Video from models
 
