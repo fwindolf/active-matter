@@ -1,5 +1,5 @@
 import argparse
-from universal_datagen.generator.generator_text import AM2018TxtGenerator
+from universal_datagen.generator import *
 from universal_models.models.models import get_model
 from universal_models.losses.losses import ce_dice_loss, bce_dice_loss, dice_coeff, gen_dice_coeff
 from keras.losses import binary_crossentropy, categorical_crossentropy
@@ -20,11 +20,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-m', '--model', help='Name of the model to train',
                     required=True)
 parser.add_argument('-s', '--structure', help='Structure of the data', 
-                    choices=['pair', 'stacked']) # Not sequence (Time based networks...)
+                    choices=['pair', 'stacked', 'sequence'])
 parser.add_argument('-l', '--labeled', help='Use labeled data',
                     action='store_true', default=False)                    
 
 # dataset arguments
+parser.add_argument('-dt', '--dataset_type', help='Type of the dataset, used for creating a suitable data generator',
+                    choices=['text', 'image', 'mixed'], default='text')
 parser.add_argument('-dp', '--dataset_paths', nargs='+', help='Folders that contain data',
                     required=True)
 parser.add_argument('-dh', '--dataset_input_height', help='Height dimension of input data to model',
@@ -37,8 +39,8 @@ parser.add_argument('-dz', '--dataset_stack_size', help='Stack size of input dat
                     type=int, default=3)                    
 parser.add_argument('-dc', '--dataset_num_classes', help='Number of classes for labels in dataset',
                     type=int, default=4)              
-parser.add_argument('-ds', '--dataset_crop_scale', help='Prescaling before cropping',
-                    type=float, default=None)    
+parser.add_argument('-da', '--dataset_crop_area', help='Area of the image covered by crops',
+                    type=float, default=0.8)    
 parser.add_argument('-dm', '--dataset_max_num', help='Maximum number of data files to use to limit dataset size',
                     type=int, default=None)  
 
@@ -66,10 +68,15 @@ input_height = args.dataset_input_height
 input_width = args.dataset_input_width
 input_channels = args.dataset_input_channels
 n_classes = args.dataset_num_classes
+stacksize = args.dataset_stack_size
 
 # Create and Configure model
 if args.labeled:
-    model, output_height, output_width = get_model(args.model, input_height, input_width, input_channels * args.dataset_stack_size, n_classes)
+    output_channels = n_classes
+else:
+    output_channels = input_channels
+
+if output_channels > 1:
     if args.train_loss == 'crossentropy':
         loss = categorical_crossentropy
         metrics = ['accuracy']
@@ -79,7 +86,6 @@ if args.labeled:
     else:
         raise AttributeError("Unknown Loss")
 else:
-    model, output_height, output_width = get_model(args.model, input_height, input_width, input_channels * args.dataset_stack_size, input_channels)
     if args.train_loss == 'crossentropy':
         loss = binary_crossentropy
         metrics = ['accuracy']
@@ -88,6 +94,12 @@ else:
         metrics = [dice_coeff, ]
     else:
         raise AttributeError("Invalid loss")
+
+# Provide extra argument for stack size when network is recurrent
+if args.model.startswith('lstm'):
+    model, output_height, output_width = get_model(args.model, input_height, input_width, input_channels, output_channels, False, stacksize)
+else:
+    model, output_height, output_width = get_model(args.model, input_height, input_width, input_channels, output_channels)
 
 if args.train_optimizer == 'adam':
     optimizer = keras.optimizers.Adam(lr=args.train_learning_rate)
