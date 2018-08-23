@@ -28,6 +28,45 @@ def to_classes(data, n_classes=4, ordering='channel_last', threshold=0.00):
         output = keras.utils.to_categorical(output, num_classes=n_classes)
     return output
 
+
+def estimate_batchsize(model, memory, timesteps=1):
+    """
+    Estimate the maximum batch size usable for the model
+    https://stackoverflow.com/questions/46654424/how-to-calculate-optimal-batch-size
+
+    Args:
+        model: The model that should be trained
+        data: Input data without the batch dimension
+        memory: Available memory in MB
+    Returns: 
+        An estimate for the batchsize that should work with the model
+    """
+    # Calculate the GPU memory in bytes
+    memory_bytes = 1000000 * memory
+    
+    # Get the number of trainable parameters 
+    # https://stackoverflow.com/questions/45046525/keras-number-of-trainable-parameters-in-model
+    trainable_count = int(np.sum([K.count_params(p) for p in set(model.trainable_weights)]))
+    model_bytes = trainable_count * np.dtype(np.float32).itemsize
+    
+    # Get the size of every tensor in the model
+    tensor_bytes = 0
+    for l in model.layers:
+        shape = l.input_shape
+        if "concatenate" in l.name:
+            continue
+            
+        # tensor in this layer is the bytes in input_shape
+        data_bytes = np.prod(shape[-3:]) * np.dtype(np.float32).itemsize        
+        if "lst" in l.name:
+            data_bytes *= timesteps
+
+        tensor_bytes += data_bytes
+
+    batch_bytes = (memory_bytes - model_bytes) / tensor_bytes
+    return batch_bytes / np.dtype(np.float32).itemsize
+
+
 def show_image(img, greyscale=False, ordering='channel_last'):
     """
     Show/Plot an image from various formats
