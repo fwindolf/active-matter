@@ -2,15 +2,29 @@ import keras
 import numpy as np
 import matplotlib.pyplot as plt
 
-def to_classes(prediction, n_classes=4, ordering='channel_last', threshold=0.00):
-    output = prediction
+def to_classes(data, n_classes=4, ordering='channel_last', threshold=0.00):
+    """
+    Convert data with per-pixel class labels to a representation where the labels are shown
+    in the channels dimensions.
+    Args:
+        data: Input image-based data that should be converted
+        n_classes: classes that are considered for the output data. Corresponds to the number of channels of output
+        ordering: The data ordering of the image data [channel_last, channel_first]
+        threshold: Only consider pixels above the threshold [0...1] for the output
+    Returns:
+        A vector inflated to n_classes in the channels dimension that contains 1 everywhere where the class that the
+        channel represents is active.
+    """
+    output = data
     output[output <= threshold] = 0
     if ordering is 'channel_first':
-        output = np.argmax(prediction, axis=-3)
+        assert(data.shape[-3] == 1)
+        output = np.argmax(data, axis=-3)
         output = keras.utils.to_categorical(output, num_classes=n_classes)
         output = np.moveaxis(output, -1, -3)
     else:
-        output = np.argmax(prediction, axis=-1)
+        assert(data.shape[-1] == 1)
+        output = np.argmax(data, axis=-1)
         output = keras.utils.to_categorical(output, num_classes=n_classes)
     return output
 
