@@ -1,4 +1,4 @@
-source activate keras-tensorflow-1.6
+#source activate keras-tensorflow-1.6
 
 datadir=/l/projects/data/AM2018_MIXED
 #datadir=/l/projects/data/AM2018_SIMULATION/data
