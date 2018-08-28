@@ -2,5 +2,6 @@
 .ipynb_checkpoints
 **/__pycache__
 
-output/**
+videos
+output
 *.ipynb
