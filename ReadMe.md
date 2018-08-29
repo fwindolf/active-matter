@@ -118,19 +118,25 @@ usage: train.py [-h] -m MODEL [-s {pair,stacked,sequence}] [-l]
 
 ## Creating Video from models
 
-Find out the full usage options by running `video.py -h`.
+Find out the full usage options by running `python video_pipeline.py -h`.
 
 ```
-usage: video.py [-h] -m MODEL -d DATA -s {pair,stacked,sequence} -w
-                WEIGHTS_FOLDER [-f FPS] [-o OUTPUT_NAME] [-c CLASSES]
-                [-b BATCH_SIZE] [-max MAX_FRAMES] [-ih INPUT_HEIGHT]
-                [-iw INPUT_WIDTH] [-in INPUT_CHANNELS]
+usage: video_pipeline.py [-h] -am ABSTRACTION_MODEL_DIR -cm
+                         CLASSIFICATION_MODEL_DIR -d DATA [-p] [-f FPS]
+                         [-o OUTPUT_NAME] [-b BATCH_SIZE] [-m MAX_FRAMES] [-i]
+                         [-l {debug,info,warn,error}]
 ```
 
-Creating video only works (and produces meaningful results) when using
-the same parameters as for training. 
+Both a model for image abstraction as well as a model for classification have to be provided. The provided paths have to contain a `model.json`, `param.json` and a weights file in fromat `*.hdf5`.
 
-`-w  `: The output folder generated during training.
+Specify an input stream, which can be either a video that is readable with opencv or the device ID of a opencv-compatible camera. For best results, make sure the image has a boundary at the bottom and is not distorted.
 
-`-max`: If there is more data in the `-d` directory than you want to use, simply 
-specify the maximum number of frames for the video.
+For most of the experimental data, activating `-p` for preprocessing works just fine.
+
+### Interactive mode
+
+In interactive mode `-i`, the script will display the current image in a window. To operate in realtime, frames will be dropped if coming in too fast (for this to work, the video stream needs to have the right fps property).
+
+### Video mode
+
+To store the created images, use a output name `-o`. The video sequence will be stored in `/videos` as an `.mp4` file with `-fps` frames per second. It is discouraged to use storing the video with a live video stream, as the opencv buffer might overflow (and its not possible to operate the model in realtime on a common gpu). To increase performance, set the batchsize to as high as possible without warnings to appear about there not being enough GPU memory.
