@@ -38,7 +38,7 @@ parser.add_argument('-l', '--log_level', help='Set the level for logging', choic
 
 args = parser.parse_args()
 
-logging.basicConfig(format='%(asctime)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.getLevelName(args.log_level.upper())) # format like tf
+logging.basicConfig(format='%(thread)d | %(levelname)s | %(asctime)s.%(msecs)03d: %(message)s', level=logging.getLevelName(args.log_level.upper())) # format like tf
 
 with open(os.path.join(args.abstraction_model_dir, 'param.json'), 'r') as f:
     param_dict = json.loads(f.read())
@@ -163,7 +163,6 @@ def feed_model():
         else:
             imgs = item
             logging.debug("Took item from img_q: batch %s" % (imgs.shape, ))
-
         
         t = time.time()
         clas = pipeline_model.predict(imgs)
