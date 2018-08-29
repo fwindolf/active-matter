@@ -20,8 +20,6 @@ import queue
 import threading
 import logging
 
-logging.basicConfig(format='%(asctime)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO) # like tf
-
 parser = argparse.ArgumentParser()
 
 # model arguments
@@ -36,7 +34,11 @@ parser.add_argument('-b', '--batch_size', help='Speed up by increasing the numbe
 parser.add_argument('-m', '--max_frames', help='Maximum number of frames to process', type=int, default=100000)
 parser.add_argument('-i', '--interactive', action='store_true', help='Interactive mode (only show video)')
 
+parser.add_argument('-l', '--log_level', help='Set the level for logging', choices=['debug', 'info', 'warn', 'error'], default='info')
+
 args = parser.parse_args()
+
+logging.basicConfig(format='%(asctime)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S', level=logging.getLevelName(args.log_level.upper())) # format like tf
 
 with open(os.path.join(args.abstraction_model_dir, 'param.json'), 'r') as f:
     param_dict = json.loads(f.read())
@@ -58,12 +60,11 @@ def fig_to_np(fig):
     w, h = fig.canvas.get_width_height()
     im = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8)
     im = np.reshape(im, (h, w, 3)) # rgb
-    im = np.stack((im[..., 2], im[..., 1], im[..., 0],), axis=2) # bgr
-
     return im
 
 # Initialize image shape
-fig, axes = plt.subplots(1, 2, figsize=(20, 8))
+fig, axes = plt.subplots(1, 2, figsize=(int(2 * lw/64), int(lh/64)))
+plt.tight_layout()
 im_x, im_y = axes.ravel()
 
 x = np.zeros((ih, iw))
@@ -77,15 +78,13 @@ im_y.set_axis_off()
 im_y.imshow(y, cmap='hot')
 im_y.set_title("Prediction")
 
-plt.tight_layout()
-
 im = fig_to_np(fig)
 h, w, _ = im.shape
 
 if args.interactive:
     cv2.namedWindow("Output")
 else:
-    print("Creating video writer")
+    logging.info("Creating video writer")
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
     out = cv2.VideoWriter('videos/' + args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
 
@@ -99,7 +98,7 @@ else:
     # renew to get rid of blank frame
     out = cv2.VideoWriter('videos/' + args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
 
-print("Creating video capture")
+logging.info("Creating video capture")
 inp = cv2.VideoCapture()
 status = inp.open(args.data)
 if not status:
@@ -118,6 +117,8 @@ def feed_model():
     logging.debug("Loading weights file %s" % (sorted(weights)[-1]))
     abstract_model.load_weights(sorted(weights)[-1])
 
+    # To be able to feed single images to the network, set the number of timesteps to 1
+    # and exchange the input layers
     new_input = Input(shape=(1, ih, iw, ic)) # time step of 1       
     abstract_model.layers.pop(0)
     new_output = abstract_model(new_input)
@@ -131,7 +132,9 @@ def feed_model():
     weights = glob.glob(args.classification_model_dir + "weights*.hdf5")
     logging.debug("Loading weights file %s" % (sorted(weights)[-1]))
     classify_model.load_weights(sorted(weights)[-1])
-                        
+
+    # To be able to feed single images to the network, set the number of timesteps to 1
+    # and exchange the input layers                 
     new_input = Input(shape=(1, lh, lw, lc)) # time step of 1
     classify_model.layers.pop(0)
     new_output = classify_model(new_input)
@@ -140,8 +143,10 @@ def feed_model():
 
     logging.debug("Classification model created")
 
+    # Chain the two models together, first abstraction then classification
     pipeline_model = Model(abstract_model.inputs, classify_model(abstract_model(abstract_model.inputs)))
     
+    # Set the network to keep its state after predictions
     for l in pipeline_model.layers:
         l.trainable = False
         if 'lst' in l.name:
@@ -159,12 +164,16 @@ def feed_model():
             imgs = item
             logging.debug("Took item from img_q: batch %s" % (imgs.shape, ))
 
+        
+        t = time.time()
         clas = pipeline_model.predict(imgs)
         for i in range(len(imgs)):
             img, cla = imgs[i], clas[i]
             logging.debug("Putting classified image %s into pred_q" % str(cla.shape))
             vq.put((img, cla))
+            logging.debug("pred_q now has %d items" % vq.qsize())
 
+        logging.info("TIME: Predicting classes | %d ms" % ((time.time() - t) * 1000))
         fq.task_done()
     
     logging.debug("Done with feeding model")
@@ -181,12 +190,16 @@ def feed_video():
             vq.task_done()
             break
         
+        t = time.time()
         x, yp = item        
         logging.debug("Received frame with shapes %s and %s" % (x.shape, yp.shape, ))
-
+        
         x = np.squeeze(x)
         yp = np.squeeze(yp)
         yp = np.stack((yp[..., 3], yp[..., 2], yp[..., 1],), axis=-1) # bgr 
+
+        logging.info("TIME: Modifying data   | %d ms" % ((time.time() - t) * 1000))
+        t = time.time()
 
         # Input
         im_x.cla()
@@ -199,11 +212,13 @@ def feed_video():
         im_y.imshow(yp)
         im_y.set_title("Predicted (next frame)")
 
+        logging.info("TIME: Painting data    | %d ms" % ((time.time() - t) * 1000))
+        t = time.time()
+
         # Render into numpy array
-        fig.canvas.draw()
-        w, h = fig.canvas.get_width_height()
-        im = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        im = np.reshape(im, (h, w, 3))
+        im = fig_to_np(fig)
+        logging.info("TIME: Rendering figure | %d ms" % ((time.time() - t) * 1000))
+        t = time.time()
 
         if args.interactive:
             cv2.imshow("Output", im) 
@@ -215,6 +230,9 @@ def feed_video():
             logging.info("Frame %d (%.2f FPS)" % (frames, 100. / (time.time() - last_time)))       
             last_time = time.time()
         frames += 1
+
+        logging.info("TIME: Writing to video | %d ms" % ((time.time() - t) * 1000))
+        t = time.time()
 
         vq.task_done()
 
@@ -311,14 +329,21 @@ while inp.grab():
 
     if args.preprocess:
         frame = preprocess(frame)
+    else:
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        frame = cv2.resize(frame, (iw, ih))
 
     batch.append(frame[np.newaxis, np.newaxis, ..., np.newaxis])
 
     if len(batch) == args.batch_size:
+        logging.debug("Putting batch %s to queue" % (np.array(batch).shape, ))
         fq.put(np.concatenate(batch, axis=0))
+        logging.debug("fq now has %d items" % vq.qsize())
         batch.clear()
     if i > args.max_frames:
+        logging.debug("Putting last batch %s to queue" % (np.array(batch).shape, ))
         fq.put(np.concatenate(batch, axis=0))
+        logging.debug("fq now has %d items" % vq.qsize())
         break
     i += 1 
 
