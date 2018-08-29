@@ -1,6 +1,6 @@
 import argparse
-from universal_datagen.generator.generator_text import AM2018TxtGenerator
-from universal_models.models.models import get_model
+from image_datagen.generator.generator_text import AM2018TxtGenerator
+from image_models.models.models import get_model
 
 import numpy as np
 import matplotlib.pyplot as plt

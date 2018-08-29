@@ -1,7 +1,7 @@
 import argparse
-from universal_datagen.generator import *
-from universal_models.models.models import get_model
-from universal_models.losses.losses import ce_dice_loss, bce_dice_loss, dice_coeff, gen_dice_coeff
+from image_datagen.generator import *
+from image_models.models.models import get_model
+from image_models.losses.losses import ce_dice_loss, bce_dice_loss, dice_coeff, gen_dice_coeff
 from keras.losses import binary_crossentropy, categorical_crossentropy
 
 import tensorflow as tf

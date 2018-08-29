@@ -1,6 +1,6 @@
-[submodule "universal_datagen"]
-	path = universal_datagen
-	url = git@version.aalto.fi:windolf1/universal-datagen.git
-[submodule "universal_models"]
-	path = universal_models
-	url = git@version.aalto.fi:windolf1/universal-models.git
+[submodule "image_datagen"]
+	path = image_datagen
+	url = https://github.com/fwindolf/image-datagen.git
+[submodule "image_models"]
+	path = image_models
+	url = https://github.com/fwindolf/image-models.git
