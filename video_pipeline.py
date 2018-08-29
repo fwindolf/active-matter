@@ -60,10 +60,11 @@ def fig_to_np(fig):
     w, h = fig.canvas.get_width_height()
     im = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8)
     im = np.reshape(im, (h, w, 3)) # rgb
+    im = np.stack([im[..., 2], im[..., 1], im[..., 0]], axis=-1) # bgr
     return im
 
 # Initialize image shape
-fig, axes = plt.subplots(1, 2, figsize=(int(2 * lw/64), int(lh/64)))
+fig, axes = plt.subplots(1, 2, figsize=(int(2.1 * lw/64), int(lh/64)))
 plt.tight_layout()
 im_x, im_y = axes.ravel()
 
@@ -81,8 +82,13 @@ im_y.set_title("Prediction")
 im = fig_to_np(fig)
 h, w, _ = im.shape
 
+if args.output_name is None and args.interactive is False:
+    logging.error("No output name found and not interactive, please provide one of both")
+    exit(0)
+
 if args.interactive:
-    cv2.namedWindow("Output")
+    logging.info("Creating canvas")
+    plt.ion()
 else:
     logging.info("Creating video writer")
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -98,14 +104,99 @@ else:
     # renew to get rid of blank frame
     out = cv2.VideoWriter('videos/' + args.output_name + '.mp4',fourcc, args.fps, (w, h)) # w, h
 
-logging.info("Creating video capture")
-inp = cv2.VideoCapture()
-status = inp.open(args.data)
-if not status:
-    raise RuntimeError("Unable to open video (stream) %s" % args.data)
+if args.interactive:
+    qlen = 1
+else:
+    qlen = 30
 
-fq = queue.Queue(30)
-vq = queue.Queue(30)
+fq = queue.Queue(qlen)
+vq = queue.Queue(qlen)
+
+cv_model = threading.Condition()
+cv_draw = threading.Condition()
+cv_drawn = threading.Condition()
+
+def feed_images():
+    logging.info("Creating video capture")
+    cap = cv2.VideoCapture()
+    status = cap.open(args.data)
+    if not status:
+        logging.error("Unable to open video (stream) %s" % args.data)
+        os._exit(-1)
+
+    # Get the fps to delay feeding images to actual speed
+    cap_fps = cap.get(cv2.CAP_PROP_FPS)
+
+    # Wait for model to be ready
+    with cv_model:
+        cv_model.wait()
+
+    logging.debug("Filling queue with data")
+
+    batch = []
+
+    frames = 0
+    dropped_frames = 0
+    while cap.grab():
+        t_frame = time.time()
+        ret, frame = cap.retrieve()
+        if not ret:
+            raise RuntimeWarning("Error while reading video stream")
+
+        if args.preprocess:
+            frame = preprocess(frame)
+        else:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            fh, fw = frame.shape[:2]
+            fch, fcw = int(fh/2), int(fw/2)
+
+            # crop if the aspect ratio is different
+            if (fh/fw) != (ih/iw):
+                iratio = ih/iw
+                if fh > fw:
+                    fh = iratio * fw
+                else:
+                    fw = fh/iratio
+
+                foh, fow = int(fh/2), int(fw/2)
+                frame = frame[fch-foh:fch+foh, fcw-fow:fcw+fow]
+
+            frame = cv2.resize(frame, (iw, ih))
+
+        batch.append(frame[np.newaxis, np.newaxis, ..., np.newaxis])
+        if args.interactive:
+            logging.debug("Putting image to queue")
+            try:
+                fq.put_nowait(np.concatenate(batch, axis=0))
+            except queue.Full:
+                logging.debug("Dropping frame because queue is full!")
+                dropped_frames += 1
+            
+            # Sleep to get to actual 
+            wait = (1./cap_fps) - (time.time() - t_frame)
+            time.sleep(max(0, wait))
+            t_frame = time.time()
+            batch.clear()
+        elif len(batch) == args.batch_size:
+            logging.debug("Putting batch to queue")
+            fq.put(np.concatenate(batch, axis=0))
+            logging.debug("fq now has %d items" % vq.qsize())
+            batch.clear()
+        if frames > args.max_frames:
+            if len(batch) > 0:
+                logging.debug("Putting last batch to queue")                        
+                fq.put(np.concatenate(batch, axis=0))
+                logging.debug("fq now has %d items" % vq.qsize())
+            break
+        
+        frames += 1
+
+    logging.debug("Image acquisition thread finished")
+    logging.info("Processed %d frames, of which %d were dropped (%.1f%%)" % (frames, dropped_frames, 100*dropped_frames/frames))
+
+    fq.put(None)
+    logging.debug("Waiting for work to finish...")
 
 def feed_model():
     # create model in this thread
@@ -154,6 +245,10 @@ def feed_model():
 
     logging.info("Model ready")
 
+    # Broadcast that the model is ready
+    with cv_model:
+        cv_model.notify_all()
+
     stop = False
     while not stop:        
         item = fq.get()
@@ -166,13 +261,15 @@ def feed_model():
         
         t = time.time()
         clas = pipeline_model.predict(imgs)
+        logging.debug("TIME: Predicting classes | %d ms" % ((time.time() - t) * 1000))
+        t = time.time()
         for i in range(len(imgs)):
             img, cla = imgs[i], clas[i]
             logging.debug("Putting classified image %s into pred_q" % str(cla.shape))
             vq.put((img, cla))
             logging.debug("pred_q now has %d items" % vq.qsize())
-
-        logging.info("TIME: Predicting classes | %d ms" % ((time.time() - t) * 1000))
+        logging.debug("TIME: Classes to queue  | %d ms" % ((time.time() - t) * 1000))
+        
         fq.task_done()
     
     logging.debug("Done with feeding model")
@@ -194,11 +291,17 @@ def feed_video():
         logging.debug("Received frame with shapes %s and %s" % (x.shape, yp.shape, ))
         
         x = np.squeeze(x)
-        yp = np.squeeze(yp)
-        yp = np.stack((yp[..., 3], yp[..., 2], yp[..., 1],), axis=-1) # bgr 
+        yp = np.squeeze(yp)[..., 1:]
+        #yp = np.stack((yp[..., 3], yp[..., 2], yp[..., 1],), axis=-1) # bgr 
 
-        logging.info("TIME: Modifying data   | %d ms" % ((time.time() - t) * 1000))
+        logging.debug("TIME: Modifying data     | %d ms" % ((time.time() - t) * 1000))
         t = time.time()
+
+        # Wait until its drawn before changing the plot
+        logging.debug("Waiting until last image was drawn")
+        if args.interactive:
+            with cv_drawn:
+                cv_drawn.wait(timeout=1)
 
         # Input
         im_x.cla()
@@ -209,28 +312,30 @@ def feed_video():
         im_y.cla()
         im_y.set_axis_off()
         im_y.imshow(yp)
-        im_y.set_title("Predicted (next frame)")
+        im_y.set_title("Prediction")
 
-        logging.info("TIME: Painting data    | %d ms" % ((time.time() - t) * 1000))
-        t = time.time()
-
-        # Render into numpy array
-        im = fig_to_np(fig)
-        logging.info("TIME: Rendering figure | %d ms" % ((time.time() - t) * 1000))
+        logging.debug("TIME: Painting data      | %d ms" % ((time.time() - t) * 1000))
         t = time.time()
 
         if args.interactive:
-            cv2.imshow("Output", im) 
+            # Signal that a new frame is ready to be drawn
+            logging.debug("Notifying about new image to draw")
+            with cv_draw:
+                cv_draw.notify_all()
         else:
+            # Render into numpy array
+            im = fig_to_np(fig)
+            logging.debug("TIME: Rendering figure   | %d ms" % ((time.time() - t) * 1000))
+            t = time.time()
             out.write(im) 
-        logging.debug("Wrote frame with shape %s to video" % (im.shape, ))
+            logging.debug("Wrote frame with shape %s to video" % (im.shape, ))
 
         if frames % 100 == 0:
             logging.info("Frame %d (%.2f FPS)" % (frames, 100. / (time.time() - last_time)))       
             last_time = time.time()
         frames += 1
 
-        logging.info("TIME: Writing to video | %d ms" % ((time.time() - t) * 1000))
+        logging.debug("TIME: Output figure      | %d ms" % ((time.time() - t) * 1000))
         t = time.time()
 
         vq.task_done()
@@ -315,52 +420,37 @@ t_feed.start()
 t_video = threading.Thread(target=feed_video)
 t_video.start()
 
-# Start Threads
-logging.debug("Filling queue with data")
-status = True
-i = 0
+t_images = threading.Thread(target=feed_images)
+t_images.start()
 
-batch = []
-while inp.grab():
-    ret, frame = inp.retrieve()
-    if not ret:
-        raise RuntimeWarning("Error while reading video stream")
+if args.interactive:
+    # Draw as long as the video thread produces images
+    while t_video.is_alive():
+        # Drawing only works in main thread
+        logging.debug("Waiting for new image")
+        with cv_draw:
+            cv_draw.wait()
+        
+        logging.debug("Drawing new frame")    
+        
+        fig.show()
+        fig.canvas.flush_events()
 
-    if args.preprocess:
-        frame = preprocess(frame)
-    else:
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        frame = cv2.resize(frame, (iw, ih))
+        logging.debug("Notifying about drawn image")
+        with cv_drawn:
+            cv_drawn.notify_all()
 
-    batch.append(frame[np.newaxis, np.newaxis, ..., np.newaxis])
+t_images.join()
+t_feed.join()
+t_video.join()
+logging.debug("Collected threads")
 
-    if len(batch) == args.batch_size:
-        logging.debug("Putting batch %s to queue" % (np.array(batch).shape, ))
-        fq.put(np.concatenate(batch, axis=0))
-        logging.debug("fq now has %d items" % vq.qsize())
-        batch.clear()
-    if i > args.max_frames:
-        logging.debug("Putting last batch %s to queue" % (np.array(batch).shape, ))
-        fq.put(np.concatenate(batch, axis=0))
-        logging.debug("fq now has %d items" % vq.qsize())
-        break
-    i += 1 
-
-fq.put(None)
-logging.debug("Waiting for work to finish...")
 fq.join()
 vq.join()
 logging.debug("Collected queues")
-
-t_feed.join()
-t_video.join()
-
-logging.debug("Collected threads")
  
 logging.debug("Done")
 
-if args.interactive:
-    cv2.destroyAllWindows()
-else:
+if not args.interactive:
     out.release()
     logging.debug("Writing video")
