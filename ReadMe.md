@@ -81,7 +81,9 @@ matplotlib     # Plotting library
 jupyter        # Interactive python in the browser
 ```
 
-Some packages might not be avaialable in your environment, this was tested on Ubuntu 16.10 and CentOS 7. The `conda-forge` channel might be worth checking out if that is the case.
+Some packages might not be available in your environment, this was tested on Ubuntu 16.10 and CentOS 7. The `conda-forge` channel might be worth checking out if that is the case.
+
+For using the scripts to create videos, OpenCV is an additional requirement. Uncomment that part of the `requirements.txt` while creating the environment or manually run `conda install opencv`.
 
 ## Running 
 
