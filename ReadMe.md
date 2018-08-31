@@ -42,17 +42,7 @@ The final goal of this project is to being able to transfer knowledge about the 
 the system from the simulation to experimental data. Using `video_pipeline.py` with trained
 models allows just that.
 
-The output of the script are videos or a live video feed, while either videos or a camera
-stream can be used. 
-
-Videos look like this:
-
-
-![Mainly Gas](gifs/0deg_-120V.gif)
-
-![Mainly Liquid](gifs/60deg_-105V.gif)
-
-![Mainly Solid](gifs/60deg_-95V.gif)
+The output of the script are videos or a live video feed, while either videos or a camera stream can be used. 
 
 ## Environment
 
